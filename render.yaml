@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: vera-bot
+    env: python
+    region: singapore
+    plan: free
+    buildCommand: "pip install -r requirements.txt && python dataset/generate_dataset.py --seed-dir dataset --out expanded"
+    startCommand: "uvicorn main:app --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: PORT
+        value: 10000
