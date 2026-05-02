@@ -1,20 +1,75 @@
-## Approach
-Vera-Bot uses Google Gemini Flash as its message engine with 16 trigger-specific prompt templates (not one generic prompt). Each trigger kind — research_digest, recall_due, perf_dip, festival, curious_ask, etc. — has a tailored composition style that pre-selects the right compulsion lever (specificity, loss aversion, social proof, effort externalization, or curiosity). The compose() function: (1) maps trigger.kind to a style template, (2) builds a structured context block from all 4 inputs, (3) calls Gemini at temperature=0.0, (4) returns JSON with body, cta, send_as, suppression_key, rationale.
+# Vera-Bot: AI Assistant for Merchant Growth 🚀
 
-## What Makes This Score High
-- Specificity: every message anchors on one verifiable fact from context (JIDA p.14 with n=2100, CTR 2.1% vs peer 3.0%, ₹299 from active catalog)
-- Category voice: dentists get clinical-peer tone, restaurants get operator-to-operator, no promotional language for healthcare categories
-- Hindi-English code-mix: automatically triggered when merchant.languages includes "hi"
-- Anti-hallucination: system prompt explicitly forbids inventing numbers, citations, or offers not present in the received context
+Vera-Bot is an intelligent, context-aware AI assistant designed to help local merchants (salons, dentists, restaurants, gyms, and pharmacies) grow their businesses through automated, high-converting WhatsApp conversations. 
 
-## Multi-turn Handling
-Auto-reply detection exits in ≤2 turns (not 6) using 12 Hindi+English signature phrases + repeated-message check. Intent transitions route immediately: "yes/haan/karo/bilkul" → action mode, "mujhe join karna hai" → onboarding (no more qualifying questions).
+Built for the MagicPin AI Challenge, this system acts as a hyper-personalized growth manager, analyzing real-time performance metrics and suggesting actionable campaigns to merchants.
 
-## Model Choice
-Gemini Flash: sub-3s response (within 30s timeout), free tier, strong Hindi support, reliable JSON output at temperature=0.
+## 🌟 Key Features
 
-## Tradeoffs
-Flash over Pro for speed consistency. temperature=0 for judge reproducibility requirement (would use 0.3 in production for creative variety).
+1. **Dual-LLM Architecture (Groq + Gemini)**
+   - **Primary Engine**: Powered by Groq (`llama-3.3-70b-versatile`) for lightning-fast inference and high rate limits.
+   - **Smart Fallback**: Automatically falls back to Google's `gemini-2.0-flash` if Groq encounters errors or rate limits.
+   - **Rule-Based Fallback**: An additional, fully offline rule-based generation layer guarantees the bot never fails to deliver a message, even if all API quotas are completely exhausted.
 
-## What Would Help
-Historical reply-rate data by trigger+compulsion combination per category — current priority ranking is heuristic from case studies only.
+2. **Hyper-Personalized Generation**
+   - Incorporates real-time merchant data: CTR vs. peer median, recent review milestones, active catalog offers, and customer aggregates.
+   - Uses psychological levers like *Loss Aversion*, *Social Proof*, and *Effort Externalization* to maximize merchant conversion.
+   - Adjusts voice and tone per category (e.g., clinical tone for dentists, operator-to-operator tone for restaurants).
+   - Generates code-mixed Hindi-English messages for relevant merchants based on their preferences.
+
+3. **Multi-Turn Conversation Engine**
+   - Stateful context tracking via an in-memory `ContextStore`.
+   - Automatically detects intents (accept, reject, hostile, question) and routes the conversation appropriately.
+   - Capable of identifying auto-replies and gracefully exiting without annoying the merchant.
+
+4. **FastAPI Backend Services**
+   - **`/v1/context`**: Load and update merchant, customer, and trigger contexts.
+   - **`/v1/tick`**: Process triggers and generate proactive outbound messages.
+   - **`/v1/reply`**: Handle incoming merchant replies and manage the ongoing conversation.
+
+## 📂 Project Structure
+
+- `main.py`: The FastAPI application server and endpoint routing.
+- `compose.py`: The core LLM prompt engineering, Groq/Gemini generation logic, and rule-based fallback system.
+- `reply_handler.py`: LLM logic for handling and responding to merchant replies in an active conversation.
+- `state.py`: In-memory datastore managing merchants, triggers, categories, and conversation history.
+- `load_dataset.py`: Utility to parse and load the `dataset_bundle.json` into the context store.
+- `generate_remaining.py` / `generate_submission.py`: Scripts used to evaluate the bot against the 30-pair test dataset and output to `submission.jsonl`.
+- `verify_all.py` / `final_check.py`: Comprehensive test suites verifying APIs, endpoints, and the final submission output.
+
+## 🛠️ Setup & Installation
+
+1. **Install Dependencies**:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+2. **Environment Variables**:
+   Create a `.env` file in the root directory:
+   ```env
+   GROQ_API_KEY=your_groq_api_key
+   GEMINI_API_KEY=your_gemini_api_key
+   PORT=8000
+   ```
+
+3. **Run the Server**:
+   ```bash
+   python main.py
+   ```
+
+## 📊 Evaluation & Testing
+
+The bot has been rigorously evaluated against a 30-pair test dataset. You can verify the outputs and system health by running the final check script:
+
+```bash
+python final_check.py
+```
+
+This will:
+- Verify both Groq and Gemini API connections.
+- Test the dynamic generation pipeline across different trigger types.
+- Validate the schema and quality of all 30 entries in `submission.jsonl`.
+- Perform live endpoint tests against the running FastAPI server.
+
+---
+*Built for the MagicPin AI Challenge.*
