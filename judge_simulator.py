@@ -21,16 +21,16 @@ Author: magicpin AI Challenge Team
 # =============================================================================
 
 # Your bot's URL (where your bot is running)
-BOT_URL = "http://localhost:8080"
-
+BOT_URL = "http://localhost:8000"
 # Choose your LLM provider: "openai", "anthropic", "gemini", "deepseek", "groq", "ollama", "openrouter"
-LLM_PROVIDER = "openai"
+LLM_PROVIDER = "groq"
 
 # Your API key (paste your key here)
-LLM_API_KEY = ""  # <-- PUT YOUR API KEY HERE
+import os as _os; from dotenv import load_dotenv as _ldenv; _ldenv()
+LLM_API_KEY = _os.environ.get("GROQ_API_KEY", "")  # reads from .env automatically
 
 # Model to use (leave empty for default, or specify like "gpt-4o", "claude-3-5-sonnet-20241022", etc.)
-LLM_MODEL = ""  # <-- Optional: specify model or leave empty for default
+LLM_MODEL = "llama-3.3-70b-versatile"
 
 # For Ollama only: local server URL
 OLLAMA_URL = "http://localhost:11434"
