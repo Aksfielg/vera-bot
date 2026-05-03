@@ -21,22 +21,23 @@ Author: magicpin AI Challenge Team
 # =============================================================================
 
 # Your bot's URL (where your bot is running)
-BOT_URL = "http://localhost:8000"
-# Choose your LLM provider: "openai", "anthropic", "gemini", "deepseek", "groq", "ollama", "openrouter"
-LLM_PROVIDER = "groq"
+BOT_URL ="http://localhost:8000"
 
-# Your API key (paste your key here)
+# Choose your LLM provider: "openai", "anthropic", "gemini", "deepseek", "groq", "ollama", "openrouter"
+LLM_PROVIDER ="groq"
+
+# Your API key (paste your key here — or set GROQ_API_KEY in your .env)
 import os as _os; from dotenv import load_dotenv as _ldenv; _ldenv()
-LLM_API_KEY = _os.environ.get("GROQ_API_KEY", "")  # reads from .env automatically
+LLM_API_KEY = _os.environ.get("GROQ_API_KEY", "")  # auto-loaded from .env
 
 # Model to use (leave empty for default, or specify like "gpt-4o", "claude-3-5-sonnet-20241022", etc.)
-LLM_MODEL = "llama-3.3-70b-versatile"
+LLM_MODEL ="llama-3.3-70b-versatile"
 
 # For Ollama only: local server URL
-OLLAMA_URL = "http://localhost:11434"
+OLLAMA_URL ="http://localhost:11434"
 
 # Which test to run by default
-TEST_SCENARIO = "all"
+TEST_SCENARIO ="all"
 
 # =============================================================================
 # ██████  END OF CONFIGURATION - DON'T EDIT BELOW THIS LINE ██████
