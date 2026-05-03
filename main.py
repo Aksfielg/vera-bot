@@ -48,6 +48,9 @@ async def handle_context(request: Request):
     current = store.get_version(context_id)
     if current is not None and current > version:
         return JSONResponse(status_code=409, content={"accepted": False, "reason": "stale_version", "current_version": current})
+    if current is not None and current == version:
+        # Same version re-post is a no-op — return 200 per spec
+        return JSONResponse(content={"accepted": True, "ack_id": f"ack_noop_{context_id}", "stored_at": datetime.now(timezone.utc).isoformat()})
         
     store.upsert(scope, context_id, version, payload)
     
@@ -107,7 +110,11 @@ async def handle_tick(request: Request):
                 "send_as": result.get("send_as"),
                 "trigger_id": trigger_id,
                 "template_name": result.get("template_name", ""),
-                "template_params": result.get("template_params", {}),
+                "template_params": [
+                    merchant.get("identity", {}).get("owner_first_name", ""),
+                    trigger.get("kind", ""),
+                    result.get("body", "")[:50]
+                ],
                 "body": result.get("body"),
                 "cta": result.get("cta"),
                 "suppression_key": suppression_key,
@@ -175,15 +182,26 @@ async def handle_healthz():
 @app.get("/v1/metadata")
 async def handle_metadata():
     return JSONResponse(content={
-        "bot_name": "VeRA-Pro", 
-        "version": "1.0.0", 
-        "author": "Participant", 
-        "model": "gemini-2.0-flash", 
-        "capabilities": ["compose", "multi_turn", "auto_reply_detection", "intent_transition", "hindi_english_mix", "customer_facing"], 
-        "supported_categories": ["dentists", "salons", "restaurants", "gyms", "pharmacies"], 
-        "max_actions_per_tick": 20, 
+        "team_name": "Risha Gupta",
+        "team_members": ["Risha Gupta"],
+        "model": "groq/llama-3.3-70b-versatile with gemini-2.0-flash fallback",
+        "approach": "16 trigger-specific prompt templates, Groq primary + Gemini fallback, rule-based fallback for quota exhaustion, auto-reply detection, intent transition routing",
+        "contact_email": "aksfielg@gmail.com",
+        "bot_name": "VeRA-Pro",
+        "version": "1.0.0",
+        "submitted_at": "2026-05-03T00:00:00Z",
+        "capabilities": ["compose", "multi_turn", "auto_reply_detection", "intent_transition", "hindi_english_mix", "customer_facing"],
+        "supported_categories": ["dentists", "salons", "restaurants", "gyms", "pharmacies"],
+        "max_actions_per_tick": 20,
         "timeout_ms": 25000
     })
+
+@app.post("/v1/teardown")
+async def teardown(request: Request):
+    store._store.clear()
+    store._suppression_keys.clear()
+    store._conversations.clear()
+    return JSONResponse(content={"wiped": True, "message": "State cleared"})
 
 if __name__ == "__main__":
     import uvicorn
