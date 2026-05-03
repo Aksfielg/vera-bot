@@ -36,8 +36,8 @@ LLM_MODEL ="llama-3.3-70b-versatile"
 # For Ollama only: local server URL
 OLLAMA_URL ="http://localhost:11434"
 
-# Which test to run by default
-TEST_SCENARIO ="all"
+# Which test to run by default — "score_submission" scores your submission.jsonl instantly
+TEST_SCENARIO ="score_submission"
 
 # =============================================================================
 # ██████  END OF CONFIGURATION - DON'T EDIT BELOW THIS LINE ██████
@@ -45,6 +45,7 @@ TEST_SCENARIO ="all"
 
 import os
 import sys
+sys.stdout.reconfigure(encoding='utf-8')  # fix Windows console encoding for █ ░ chars
 import json
 import time
 import re
@@ -359,25 +360,30 @@ class DatasetLoader:
 
     def load(self) -> bool:
         try:
-            cat_dir = self.dataset_dir / "categories"
-            if cat_dir.exists():
-                for f in cat_dir.glob("*.json"):
-                    data = json.load(open(f))
-                    self.categories[data.get("slug", f.stem)] = data
+            # Load from dataset_bundle.json (this project's format)
+            bundle_path = Path(__file__).parent / "dataset_bundle.json"
+            if not bundle_path.exists():
+                print_fail(f"dataset_bundle.json not found at {bundle_path}")
+                return False
 
-            for name, container, key in [
-                ("merchants_seed.json", "merchants", "merchant_id"),
-                ("customers_seed.json", "customers", "customer_id"),
-                ("triggers_seed.json", "triggers", "id")
-            ]:
-                path = self.dataset_dir / name
-                if path.exists():
-                    data = json.load(open(path))
-                    items = data.get(container, data.get(container.rstrip("s"), []))
-                    storage = getattr(self, container)
-                    for item in items:
-                        if key in item:
-                            storage[item[key]] = item
+            bundle = json.load(open(bundle_path, encoding="utf-8"))
+
+            # categories — dict keyed by slug
+            for slug, cat_data in bundle.get("categories", {}).items():
+                self.categories[slug] = cat_data
+
+            # merchants — dict keyed by merchant_id
+            for mid, m in bundle.get("merchants", {}).items():
+                self.merchants[mid] = m
+
+            # customers — dict keyed by customer_id
+            for cid, c in bundle.get("customers", {}).items():
+                self.customers[cid] = c
+
+            # triggers — dict keyed by trigger_id
+            for tid, t in bundle.get("triggers", {}).items():
+                self.triggers[tid] = t
+
             return True
         except Exception as e:
             print_fail(f"Dataset load error: {e}")
@@ -612,6 +618,7 @@ class JudgeSimulator:
             "hostile": self._hostile,
             "all": self._all,
             "full_evaluation": self._full,
+            "score_submission": self._score_submission,
         }
 
         if scenario not in scenarios:
@@ -656,12 +663,27 @@ class JudgeSimulator:
         if not self._warmup():
             return False
 
+        print_section("FULL CONTEXT LOAD")
+
+        # Push all merchants
+        for mid, m in self.dataset.merchants.items():
+            self.client.push_context("merchant", mid, 1, m)
+        print_success(f"Pushed {len(self.dataset.merchants)} merchants")
+
+        # Push a sample of customers
+        for cid, c in list(self.dataset.customers.items())[:20]:
+            self.client.push_context("customer", cid, 1, c)
+        print_success(f"Pushed {min(20, len(self.dataset.customers))} customers")
+
+        # Push all triggers
+        for tid, t in self.dataset.triggers.items():
+            self.client.push_context("trigger", tid, 1, t)
+        print_success(f"Pushed {len(self.dataset.triggers)} triggers")
+
         print_section("TICK TEST")
 
-        trigs = list(self.dataset.triggers.keys())[:3]
-        for tid in trigs:
-            self.client.push_context("trigger", tid, 1, self.dataset.triggers[tid])
-
+        # Use first 5 triggers for scoring
+        trigs = list(self.dataset.triggers.keys())[:5]
         data, err, lat = self.client.tick(trigs)
         if err:
             print_fail(f"tick: {err}")
@@ -671,7 +693,7 @@ class JudgeSimulator:
         print_info(f"Bot returned {len(actions)} action(s) ({lat:.0f}ms)")
 
         if not actions:
-            print_warn("No actions — bot chose not to send")
+            print_warn("No actions — bot chose not to send (suppression keys may be used)")
             return True
 
         for action in actions:
@@ -828,6 +850,77 @@ class JudgeSimulator:
 
             for action in actions:
                 self._score_and_display(action, verbose=False)
+
+        return True
+
+    def _score_submission(self) -> bool:
+        """Score all 30 entries from submission.jsonl directly — fast, no HTTP context push needed."""
+        print_section("SCORING submission.jsonl (ALL 30 ENTRIES)")
+
+        submission_path = Path(__file__).parent / "submission.jsonl"
+        pairs_path = Path(__file__).parent / "embedded_testpairs.json"
+
+        if not submission_path.exists():
+            print_fail("submission.jsonl not found — run generate_submission.py first")
+            return False
+        if not pairs_path.exists():
+            print_fail("embedded_testpairs.json not found")
+            return False
+
+        # Load test pairs for context (category, merchant, trigger, customer)
+        pairs = json.load(open(pairs_path, encoding="utf-8"))
+        pair_map = {p["test_id"]: p for p in pairs}
+
+        # Load submissions
+        entries = []
+        with open(submission_path, encoding="utf-8") as f:
+            for line in f:
+                if line.strip():
+                    entries.append(json.loads(line))
+
+        print_info(f"Loaded {len(entries)} submission entries")
+        print_info(f"Loaded {len(pair_map)} test pairs for context")
+
+        if not entries:
+            print_fail("submission.jsonl is empty")
+            return False
+
+        # Score each entry
+        for i, entry in enumerate(entries):
+            tid = entry.get("test_id", "")
+            pair = pair_map.get(tid, {})
+
+            # Build fake action dict from submission entry
+            action = {
+                "body": entry.get("body", ""),
+                "cta": entry.get("cta", "open_ended"),
+                "send_as": entry.get("send_as", "vera"),
+                "trigger_id": tid,
+                "merchant_id": pair.get("merchant", {}).get("merchant_id", ""),
+                "customer_id": None,
+                "rationale": entry.get("rationale", "")
+            }
+
+            category = pair.get("category", {})
+            merchant = pair.get("merchant", {})
+            trigger = pair.get("trigger", {})
+            customer = pair.get("customer")
+
+            print(f"\n{Colors.BOLD}[{i+1}/{ len(entries)}] {tid}{Colors.RESET}")
+            body_preview = entry.get("body", "")[:70]
+            print(f"{Colors.DIM}  {body_preview}...{Colors.RESET}")
+
+            score = self.scorer.score(action, category, merchant, trigger, customer)
+            self.all_scores.append(score)
+
+            print_score_bar("Specificity",      score.specificity)
+            print_score_bar("Category Fit",     score.category_fit)
+            print_score_bar("Merchant Fit",     score.merchant_fit)
+            print_score_bar("Decision Quality", score.decision_quality)
+            print_score_bar("Engagement",       score.engagement_compulsion)
+            print(f"  {Colors.BOLD}TOTAL: {score.total}/50{Colors.RESET}")
+            if score.hint:
+                print_hint(score.hint)
 
         return True
 
