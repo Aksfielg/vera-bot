@@ -257,26 +257,26 @@ class DeepSeekProvider(LLMProvider):
 class GroqProvider(LLMProvider):
     def __init__(self, api_key: str, model: str = ""):
         self.api_key = api_key
-        self.model = model or "llama-3.1-70b-versatile"
+        self.model = model or "llama-3.3-70b-versatile"
 
     def name(self) -> str:
         return f"Groq ({self.model})"
 
     def complete(self, prompt: str, system: str = None) -> str:
+        # Use the groq SDK (urllib gives 403 on Windows — SDK handles auth correctly)
+        from groq import Groq as GroqSDK
         messages = []
         if system:
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": prompt})
-
-        req = urlrequest.Request(
-            "https://api.groq.com/openai/v1/chat/completions",
-            data=json.dumps({"model": self.model, "messages": messages,
-                            "temperature": 0.2, "max_tokens": 1500}).encode("utf-8"),
-            headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
+        client = GroqSDK(api_key=self.api_key)
+        chat = client.chat.completions.create(
+            model=self.model,
+            messages=messages,
+            temperature=0.2,
+            max_tokens=1500
         )
-        resp = urlrequest.urlopen(req, timeout=TIMEOUT_LLM)
-        data = json.loads(resp.read().decode("utf-8"))
-        return data["choices"][0]["message"]["content"]
+        return chat.choices[0].message.content
 
 
 class OllamaProvider(LLMProvider):
